@@ -2,6 +2,15 @@ import type { UserKitState } from './types';
 
 export type KitFilter = 'all' | 'unrated' | 'owned' | 'rated';
 export type KitSort = 'default' | 'rating' | 'price' | 'name';
+export type KitSection = 'unrated' | 'rated' | 'wishlisted' | 'owned' | 'sold';
+
+export const KIT_SECTIONS: { id: KitSection; label: string }[] = [
+  { id: 'unrated', label: 'Unrated' },
+  { id: 'rated', label: 'Rated' },
+  { id: 'wishlisted', label: 'Wishlisted' },
+  { id: 'owned', label: 'Owned' },
+  { id: 'sold', label: 'Sold' },
+];
 
 export interface OrderedKit {
   name: string;
@@ -11,7 +20,7 @@ export interface OrderedKit {
 
 export function matchesFilter(state: UserKitState, filter: KitFilter): boolean {
   if (filter === 'unrated') return state.stars == null;
-  if (filter === 'owned') return state.owned;
+  if (filter === 'owned') return state.status === 'owned';
   if (filter === 'rated') return state.stars != null;
   return true;
 }
@@ -21,6 +30,14 @@ export function compareKits(a: OrderedKit, b: OrderedKit, sort: KitSort): number
   if (sort === 'price') return compareNumbers(a.price, b.price) || a.name.localeCompare(b.name);
   if (sort === 'rating') return compareNumbers(b.state.stars, a.state.stars) || a.name.localeCompare(b.name);
   return compareDefault(a, b);
+}
+
+export function kitSection(state: UserKitState): KitSection {
+  if (state.status === 'wishlisted' || state.status === 'owned' || state.status === 'sold') {
+    return state.status;
+  }
+  if (state.stars != null) return 'rated';
+  return 'unrated';
 }
 
 function compareDefault(a: OrderedKit, b: OrderedKit): number {
@@ -34,9 +51,7 @@ function compareDefault(a: OrderedKit, b: OrderedKit): number {
 }
 
 function groupRank(state: UserKitState): number {
-  if (state.stars == null) return 0;
-  if (state.owned) return 1;
-  return 2;
+  return KIT_SECTIONS.findIndex((section) => section.id === kitSection(state));
 }
 
 function compareNumbers(a: number | null, b: number | null): number {

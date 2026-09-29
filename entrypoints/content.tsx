@@ -8,9 +8,9 @@ import {
   upgradeListen,
   mergeTracks,
 } from '../lib/listening';
-import { compareKits, matchesFilter, type KitFilter, type KitSort } from '../lib/ordering';
-import { getKitState, updateKitState } from '../lib/storage';
-import type { ListenProgress, StoredData, UserKitState } from '../lib/types';
+import { compareKits, KIT_SECTIONS, kitSection, matchesFilter, type KitFilter, type KitSection, type KitSort } from '../lib/ordering';
+import { getKitState, getStoredData, slugFromStateKey, updateKitState } from '../lib/storage';
+import type { ListenProgress, UserKitState } from '../lib/types';
 
 const CATEGORY_PAGES = [
   'https://csgoskins.gg/categories/music-kit',
@@ -36,10 +36,21 @@ export default defineContentScript({
 
     resetInjectedLayout();
     void loadStates().then(schedule);
-    browser.storage.onChanged.addListener((changes) => {
-      const next = changes.musicKitRater?.newValue as Partial<StoredData> | undefined;
-      if (!next?.states) return;
-      states = mergeStoredStates(states, next.states);
+    browser.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'sync') return;
+      const incoming: Record<string, UserKitState> = {};
+      const removed: string[] = [];
+      for (const [key, change] of Object.entries(changes)) {
+        const slug = slugFromStateKey(key);
+        if (!slug) continue;
+        if (change.newValue && typeof change.newValue === 'object') incoming[slug] = change.newValue as UserKitState;
+        else removed.push(slug);
+      }
+      if (Object.keys(incoming).length === 0 && removed.length === 0) return;
+      states = mergeStoredStates(states, incoming);
+      if (removed.length > 0) {
+        states = Object.fromEntries(Object.entries(states).filter(([slug]) => !removed.includes(slug)));
+      }
       schedule();
     });
 
@@ -79,9 +90,8 @@ export default defineContentScript({
     }
 
     async function loadStates() {
-      const result = await browser.storage.local.get('musicKitRater');
-      const stored = result.musicKitRater as Partial<StoredData> | undefined;
-      states = stored?.states ?? {};
+      const stored = await getStoredData();
+      states = stored.states;
     }
 
     async function renderCategory() {
@@ -89,12 +99,31 @@ export default defineContentScript({
       if (!grid) return;
       ensureToolbar(grid);
       await ensureAllKits(grid);
-      orderColumns(grid);
-      for (const column of kitColumns(grid)) {
-        const card = column.querySelector<HTMLElement>('[class*="h-[545px]"]');
-        const slug = slugFrom(column);
-        if (!card || !slug) continue;
-        mountBar(card, slug, true);
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && active.closest('select.mkr-status')) active.blur();
+      const scrollX = window.scrollX;
+      const scrollY = window.scrollY;
+      const root = document.documentElement;
+      const previousAnchor = root.style.overflowAnchor;
+      root.style.overflowAnchor = 'none';
+      const restoreScroll = () => window.scrollTo(scrollX, scrollY);
+      try {
+        orderColumns(grid);
+        for (const column of kitColumns(grid)) {
+          const card = column.querySelector<HTMLElement>('[class*="h-[545px]"]');
+          const slug = slugFrom(column);
+          if (!card || !slug) continue;
+          mountBar(card, slug, true);
+        }
+      } finally {
+        restoreScroll();
+        requestAnimationFrame(() => {
+          restoreScroll();
+          requestAnimationFrame(() => {
+            restoreScroll();
+            root.style.overflowAnchor = previousAnchor;
+          });
+        });
       }
     }
 
@@ -135,7 +164,7 @@ export default defineContentScript({
       host.className = overlay ? 'mkr-host' : 'mkr-host mkr-host--flow';
       if (overlay) {
         host.style.position = 'absolute';
-        host.style.zIndex = '40';
+        host.style.zIndex = '1';
         host.style.top = '0';
         host.style.left = '0';
         host.style.right = '0';
@@ -153,10 +182,10 @@ export default defineContentScript({
       root.render(
         <RatingBar
           value={state.stars}
-          owned={state.owned}
+          status={state.status}
           listened={state.listened}
           onRatingChange={(stars) => void persist(slug, { stars })}
-          onOwnedChange={(owned) => void persist(slug, { owned })}
+          onStatusChange={(status) => void persist(slug, { status })}
           onLayout={(height) => {
             if (card) shiftCard(card, height);
           }}
@@ -182,7 +211,7 @@ export default defineContentScript({
           <button type="button" data-filter="rated">Rated</button>
           <label>
             <select aria-label="Sort music kits">
-              <option value="default">Unrated, owned, rating</option>
+              <option value="default">Unrated, rated, wishlisted, owned, sold</option>
               <option value="rating">Rating: high to low</option>
               <option value="price">Price: low to high</option>
               <option value="name">Name</option>
@@ -217,28 +246,58 @@ export default defineContentScript({
         column.classList.toggle('mkr-hidden', !include);
         return include;
       });
-      [...columns]
-        .sort((a, b) =>
-          compareKits(
-            {
-              name: nameFrom(a),
-              price: priceFrom(a),
-              state: getKitState(states, slugFrom(a) ?? ''),
-            },
-            {
-              name: nameFrom(b),
-              price: priceFrom(b),
-              state: getKitState(states, slugFrom(b) ?? ''),
-            },
-            sort,
-          ),
-        )
-        .forEach((column) => grid.append(column));
+      grid.querySelectorAll('[data-mkr-section]').forEach((header) => header.remove());
+      const sorted = [...columns].sort((a, b) =>
+        compareKits(
+          {
+            name: nameFrom(a),
+            price: priceFrom(a),
+            state: getKitState(states, slugFrom(a) ?? ''),
+          },
+          {
+            name: nameFrom(b),
+            price: priceFrom(b),
+            state: getKitState(states, slugFrom(b) ?? ''),
+          },
+          sort,
+        ),
+      );
+      const sectionCounts = new Map<KitSection, number>();
+      if (sort === 'default') {
+        for (const column of visible) {
+          const section = kitSection(getKitState(states, slugFrom(column) ?? ''));
+          sectionCounts.set(section, (sectionCounts.get(section) ?? 0) + 1);
+        }
+      }
+      const showSections = sort === 'default' && filter === 'all' && sectionCounts.size > 1;
+      let previous: KitSection | null = null;
+      for (const column of sorted) {
+        if (showSections && !column.classList.contains('mkr-hidden')) {
+          const section = kitSection(getKitState(states, slugFrom(column) ?? ''));
+          if (section !== previous) {
+            grid.append(sectionBreak(section, sectionCounts.get(section) ?? 0));
+            previous = section;
+          }
+        }
+        grid.append(column);
+      }
       const count = document.querySelector('#mkr-toolbar .mkr-count');
       if (count) count.textContent = `${visible.length} of ${columns.length}`;
     }
   },
 });
+
+function sectionBreak(section: KitSection, count: number): HTMLElement {
+  const block = document.createElement('div');
+  block.className = 'mkr-section';
+  block.dataset.mkrSection = section;
+  const title = document.createElement('h2');
+  title.textContent = KIT_SECTIONS.find((item) => item.id === section)?.label ?? section;
+  const total = document.createElement('span');
+  total.textContent = String(count);
+  block.append(title, total);
+  return block;
+}
 
 function resetInjectedLayout() {
   document.querySelectorAll('[data-music-kit-rater]').forEach((element) => element.remove());
@@ -247,7 +306,7 @@ function resetInjectedLayout() {
   document.querySelectorAll<HTMLAudioElement>('audio[data-mkr-bound]').forEach((audio) => {
     delete audio.dataset.mkrBound;
   });
-  document.querySelectorAll('[data-mkr-listen], [data-mkr-emoji]').forEach((element) => element.remove());
+  document.querySelectorAll('[data-mkr-listen], [data-mkr-emoji], [data-mkr-section]').forEach((element) => element.remove());
   document.querySelectorAll<HTMLElement>('[data-mkr-base-height]').forEach((card) => {
     card.style.height = '';
     delete card.dataset.mkrBaseHeight;
@@ -618,7 +677,7 @@ function mergeStoredStates(
     const fromRemote = Object.prototype.hasOwnProperty.call(incoming, slug);
     merged[slug] = {
       stars: fromRemote ? remote.stars : local.stars,
-      owned: fromRemote ? remote.owned : local.owned,
+      status: fromRemote ? remote.status : local.status,
       tracks: mergeTracks(local.tracks, remote.tracks),
       listened: strongerListen(local.listened, remote.listened),
     };
@@ -646,7 +705,7 @@ function pauseOtherSoundtracks(current: HTMLAudioElement) {
 
 function isOwnMutation(record: MutationRecord): boolean {
   const target = record.target instanceof Element ? record.target : record.target.parentElement;
-  if (target?.closest('#mkr-toolbar, #mkr-transport, [data-music-kit-rater], [data-mkr-listen], [data-mkr-emoji]')) {
+  if (target?.closest('#mkr-toolbar, #mkr-transport, [data-music-kit-rater], [data-mkr-listen], [data-mkr-emoji], [data-mkr-section]')) {
     return true;
   }
   const changed = [...record.addedNodes, ...record.removedNodes];
@@ -655,7 +714,9 @@ function isOwnMutation(record: MutationRecord): boolean {
     changed.every(
       (node) =>
         node instanceof Element &&
-        (node.hasAttribute('data-mkr-listen') || node.hasAttribute('data-mkr-emoji')),
+        (node.hasAttribute('data-mkr-listen') ||
+          node.hasAttribute('data-mkr-emoji') ||
+          node.hasAttribute('data-mkr-section')),
     )
   );
 }

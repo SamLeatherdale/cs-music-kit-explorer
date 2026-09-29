@@ -1,13 +1,13 @@
 .mkr-bar {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 6px;
   box-sizing: border-box;
   width: 100%;
   min-height: 58px;
-  padding: 8px 12px 10px;
+  padding: 8px 10px;
   background: #0b1220;
   border-bottom: 1px solid #334155;
   color: #e2e8f0;
@@ -21,75 +21,149 @@
 }
 
 .mkr-star,
-.mkr-owned {
+.mkr-status {
   border: 0;
   cursor: pointer;
   font-family: inherit;
 }
 
 .mkr-star {
+  position: relative;
   width: 40px;
   height: 42px;
   padding: 0;
   color: #475569;
   background: transparent;
   font-size: 34px;
-  line-height: 1;
+  line-height: 42px;
 }
 
-.mkr-star.is-on {
+.mkr-star__glyph,
+.mkr-star__fill span {
+  display: block;
+  width: 40px;
+  line-height: 42px;
+  text-align: center;
+}
+
+.mkr-star__fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 100%;
+  overflow: hidden;
   color: var(--mkr-color);
+  pointer-events: none;
+}
+
+.mkr-star.is-half .mkr-star__fill {
+  width: 50%;
+}
+
+.mkr-star.is-on .mkr-star__fill {
+  width: 100%;
 }
 
 .mkr-star:hover,
-.mkr-owned:hover {
+.mkr-status:hover {
   transform: translateY(-1px);
 }
 
 .mkr-star:focus-visible,
-.mkr-owned:focus-visible {
+.mkr-status:focus-visible {
   outline: 2px solid #93c5fd;
   outline-offset: 2px;
 }
 
-.mkr-owned {
+.mkr-bar .mkr-listen {
+  margin-right: 0;
+}
+
+.mkr-status {
+  box-sizing: border-box;
   flex: 0 0 auto;
-  min-width: 104px;
+  width: 124px;
+  min-width: 124px;
   height: 42px;
-  padding: 0 16px;
+  padding: 0 22px 0 8px;
   border: 2px solid #64748b;
   border-radius: 999px;
   color: #e2e8f0;
-  background: transparent;
-  font-size: 16px;
+  color-scheme: dark;
+  background-color: #1e293b;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) center,
+    calc(100% - 12px) center;
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+  font-size: 15px;
   font-weight: 800;
+  appearance: none;
 }
 
-.mkr-owned.is-on {
+.mkr-status--none,
+.mkr-status option {
+  color: #e2e8f0;
+  background-color: #1e293b;
+}
+
+.mkr-status--owned {
   border-color: #16a34a;
   color: white;
-  background: #16a34a;
+  background-color: #16a34a;
+}
+
+.mkr-status--wishlisted {
+  border-color: #2563eb;
+  color: white;
+  background-color: #2563eb;
+}
+
+.mkr-status--sold {
+  border-color: #f97316;
+  color: #1c1917;
+  background-color: #f97316;
 }
 
 .mkr-listen {
+  --mkr-badge:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 46%),
+    linear-gradient(180deg, #9ad4ff 0%, #1d86ef 48%, #084fae 100%);
+  position: relative;
   display: inline-block;
   flex: 0 0 auto;
   box-sizing: border-box;
   width: 12px;
   height: 12px;
   margin-right: 8px;
-  border: 1.5px solid #cbd5e1;
+  border: 1.5px solid #8eabc4;
   border-radius: 50%;
   background: transparent;
   vertical-align: middle;
 }
 
 .mkr-listen--empty {
-  background: #cbd5e1;
+  border-color: #063e8c;
+  background: var(--mkr-badge);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    inset 0 -1px 0 #063e8c;
 }
 
-.mkr-listen--partial {
-  background: linear-gradient(90deg, #cbd5e1 50%, transparent 50%);
+.mkr-listen--partial::before {
+  content: "";
+  position: absolute;
+  inset: -1.5px;
+  border-radius: 50%;
+  background: var(--mkr-badge);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    inset 0 -1px 0 #063e8c;
+  clip-path: inset(0 50% 0 0);
 }
 
 .mkr-listen--full {
@@ -108,9 +182,37 @@
   margin-right: 6px;
 }
 
+.mkr-section {
+  display: flex;
+  flex: 0 0 100%;
+  align-items: baseline;
+  justify-content: space-between;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 12px 0 6px;
+  padding: 22px 16px 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.4);
+  color: #f8fafc;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.mkr-section h2 {
+  margin: 0;
+  color: #f8fafc;
+  font-size: 1.7rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.mkr-section span {
+  color: #94a3b8;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
 .mkr-host {
   position: absolute;
-  z-index: 40;
+  z-index: 1;
   top: 0;
   right: 0;
   left: 0;

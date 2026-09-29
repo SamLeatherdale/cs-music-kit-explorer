@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import { KitCard } from '../../components/KitCard';
 import {
@@ -8,7 +8,7 @@ import {
   importData,
   updateKitState,
 } from '../../lib/storage';
-import { compareKits, matchesFilter } from '../../lib/ordering';
+import { compareKits, kitSection, KIT_SECTIONS, matchesFilter } from '../../lib/ordering';
 import { syncCatalog } from '../../lib/sync';
 import type { Filter, Sort, StoredData } from '../../lib/types';
 
@@ -22,6 +22,16 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [syncError, setSyncError] = useState<string | null>(null);
   const importInput = useRef<HTMLInputElement>(null);
+  const scrollLock = useRef<{ x: number; y: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const lock = scrollLock.current;
+    if (!lock) return;
+    scrollLock.current = null;
+    window.scrollTo(lock.x, lock.y);
+    const frame = requestAnimationFrame(() => window.scrollTo(lock.x, lock.y));
+    return () => cancelAnimationFrame(frame);
+  }, [data]);
 
   useEffect(() => {
     let active = true;
@@ -61,7 +71,11 @@ export default function App() {
   }
 
   async function update(slug: string, updateValue: Parameters<typeof updateKitState>[1]) {
-    setData(await updateKitState(slug, updateValue));
+    const next = await updateKitState(slug, updateValue);
+    const focused = document.activeElement;
+    if (focused instanceof HTMLElement && focused.matches('select.mkr-status')) focused.blur();
+    scrollLock.current = { x: window.scrollX, y: window.scrollY };
+    setData(next);
   }
 
   async function handleImport(event: ChangeEvent<HTMLInputElement>) {
@@ -108,11 +122,24 @@ export default function App() {
       );
   }, [data, filter, search, sort]);
 
+  const sections = useMemo(() => {
+    const groups = KIT_SECTIONS.map((section) => ({
+      ...section,
+      kits: [] as typeof visibleKits,
+    }));
+    for (const kit of visibleKits) {
+      const section = kitSection(getKitState(data.states, kit.slug));
+      groups.find((group) => group.id === section)?.kits.push(kit);
+    }
+    return groups.filter((group) => group.kits.length > 0);
+  }, [data.states, visibleKits]);
+  const showSections = sort === 'default' && filter === 'all' && sections.length > 1;
+
   const ratedCount = data.catalog.filter(
     (kit) => getKitState(data.states, kit.slug).stars !== null,
   ).length;
   const ownedCount = data.catalog.filter(
-    (kit) => getKitState(data.states, kit.slug).owned,
+    (kit) => getKitState(data.states, kit.slug).status === 'owned',
   ).length;
 
   return (
@@ -120,7 +147,7 @@ export default function App() {
       <header className="app-header">
         <div>
           <p className="eyebrow">CS2 MUSIC KITS</p>
-          <h1>Music Kit Rater</h1>
+          <h1>CS Music Kit Explorer</h1>
           <p className="subtitle">
             Listen on csgoskins.gg, then keep your personal ranking here.
           </p>
@@ -175,7 +202,7 @@ export default function App() {
         <label className="sort-box">
           <span>Sort</span>
           <select value={sort} onChange={(event) => setSort(event.target.value as Sort)}>
-            <option value="default">Unrated, owned, rating</option>
+            <option value="default">Unrated, rated, wishlisted, owned, sold</option>
             <option value="rating">Rating: high to low</option>
             <option value="name">Name</option>
             <option value="price">Price: low to high</option>
@@ -195,18 +222,28 @@ export default function App() {
         <div className="empty-state">No kits match these filters.</div>
       )}
       <main className="kit-grid">
-        {visibleKits.map((kit) => {
-          const state = getKitState(data.states, kit.slug);
-          return (
-            <KitCard
-              key={kit.slug}
-              kit={kit}
-              state={state}
-              onRatingChange={(stars) => void update(kit.slug, { stars })}
-              onOwnedChange={(owned) => void update(kit.slug, { owned })}
-            />
-          );
-        })}
+        {(showSections ? sections : [{ id: 'all', label: '', kits: visibleKits }]).map((section) => (
+          <Fragment key={section.id}>
+            {showSections && (
+              <h2 className="kit-section">
+                {section.label}
+                <span>{section.kits.length}</span>
+              </h2>
+            )}
+            {section.kits.map((kit) => {
+              const state = getKitState(data.states, kit.slug);
+              return (
+                <KitCard
+                  key={kit.slug}
+                  kit={kit}
+                  state={state}
+                  onRatingChange={(stars) => void update(kit.slug, { stars })}
+                  onStatusChange={(status) => void update(kit.slug, { status })}
+                />
+              );
+            })}
+          </Fragment>
+        ))}
       </main>
       <footer className="app-footer">
         <span>

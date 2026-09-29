@@ -1,22 +1,22 @@
-import type { MusicKit, UserKitState } from '../lib/types';
+import type { KitStatus, MusicKit, UserKitState } from '../lib/types';
 import { RatingBar } from './RatingBar';
 
 interface KitCardProps {
   kit: MusicKit;
   state: UserKitState;
   onRatingChange: (stars: UserKitState['stars']) => void;
-  onOwnedChange: (owned: boolean) => void;
+  onStatusChange: (status: KitStatus | null) => void;
 }
 
-export function KitCard({ kit, state, onRatingChange, onOwnedChange }: KitCardProps) {
+export function KitCard({ kit, state, onRatingChange, onStatusChange }: KitCardProps) {
   return (
     <article className="kit-card">
       <RatingBar
         value={state.stars}
-        owned={state.owned}
+        status={state.status}
         listened={state.listened}
         onRatingChange={onRatingChange}
-        onOwnedChange={onOwnedChange}
+        onStatusChange={onStatusChange}
       />
       <a className="kit-card__image-link" href={kit.url} target="_blank" rel="noreferrer">
         {kit.imageUrl ? (

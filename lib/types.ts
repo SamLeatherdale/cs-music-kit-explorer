@@ -1,4 +1,4 @@
-export type Rating = 1 | 2 | 3 | 4 | 5;
+export type Rating = 0.5 | 1 | 1.5 | 2 | 2.5 | 3 | 3.5 | 4 | 4.5 | 5;
 
 export interface MusicKit {
   slug: string;
@@ -20,9 +20,11 @@ export interface MusicKit {
 
 export type ListenProgress = 'partial' | 'full';
 
+export type KitStatus = 'owned' | 'wishlisted' | 'sold';
+
 export interface UserKitState {
   stars: Rating | null;
-  owned: boolean;
+  status: KitStatus | null;
   listened: ListenProgress | null;
   tracks: Record<string, ListenProgress>;
 }
