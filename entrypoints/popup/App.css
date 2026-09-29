@@ -1,0 +1,39 @@
+.launcher {
+  width: 280px;
+  padding: 24px;
+  color: #f8fafc;
+  background: #0f172a;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.launcher__eyebrow {
+  margin: 0 0 8px;
+  color: #60a5fa;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+p {
+  color: #94a3b8;
+}
+
+button {
+  width: 100%;
+  border: 0;
+  border-radius: 7px;
+  color: white;
+  background: #2563eb;
+  padding: 10px 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #3b82f6;
+}
