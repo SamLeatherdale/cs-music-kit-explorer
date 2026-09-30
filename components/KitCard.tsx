@@ -11,13 +11,6 @@ interface KitCardProps {
 export function KitCard({ kit, state, onRatingChange, onStatusChange }: KitCardProps) {
   return (
     <article className="kit-card">
-      <RatingBar
-        value={state.stars}
-        status={state.status}
-        listened={state.listened}
-        onRatingChange={onRatingChange}
-        onStatusChange={onStatusChange}
-      />
       <a className="kit-card__image-link" href={kit.url} target="_blank" rel="noreferrer">
         {kit.imageUrl ? (
           <img className="kit-card__image" src={kit.imageUrl} alt={`${kit.title} album art`} />
@@ -33,6 +26,15 @@ export function KitCard({ kit, state, onRatingChange, onStatusChange }: KitCardP
             <h2>{kit.name}</h2>
           </a>
         </div>
+
+        <RatingBar
+          layout="board"
+          value={state.stars}
+          status={state.status}
+          listened={state.listened}
+          onRatingChange={onRatingChange}
+          onStatusChange={onStatusChange}
+        />
 
         <div className="kit-card__tags">
           <span>{kit.rarity}</span>

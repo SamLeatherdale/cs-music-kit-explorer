@@ -27,6 +27,7 @@ export interface UserKitState {
   status: KitStatus | null;
   listened: ListenProgress | null;
   tracks: Record<string, ListenProgress>;
+  updatedAt?: string;
 }
 
 export interface StoredData {

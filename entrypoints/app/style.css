@@ -385,6 +385,18 @@ h1 {
   background: #450a0a;
 }
 
+.notice--drive {
+  border: 1px solid #1d4ed8;
+  color: #dbeafe;
+  background: #172554;
+}
+
+.drive-status {
+  color: #86efac;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
 .empty-state {
   margin: 32px 0;
   border: 1px dashed #334155;

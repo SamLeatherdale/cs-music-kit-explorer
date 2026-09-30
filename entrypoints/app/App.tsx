@@ -9,18 +9,30 @@ import {
   updateKitState,
 } from '../../lib/storage';
 import { compareKits, kitSection, KIT_SECTIONS, matchesFilter } from '../../lib/ordering';
+import {
+  driveMetaFrom,
+  DRIVE_META_KEY,
+  getDriveToken,
+  readDriveMeta,
+} from '../../lib/drive';
+import type { DriveMeta } from '../../lib/drive';
 import { syncCatalog } from '../../lib/sync';
 import type { Filter, Sort, StoredData } from '../../lib/types';
 
 const initialData: StoredData = { catalog: [], states: {}, lastSyncedAt: null };
 
 export default function App() {
+  const extensionName = browser.runtime.getManifest().name;
   const [data, setData] = useState<StoredData>(initialData);
   const [filter, setFilter] = useState<Filter>('all');
   const [sort, setSort] = useState<Sort>('default');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [signedIn, setSignedIn] = useState(false);
+  const [driveReady, setDriveReady] = useState(false);
+  const [driveBusy, setDriveBusy] = useState(false);
+  const [driveMeta, setDriveMeta] = useState<DriveMeta>({});
   const importInput = useRef<HTMLInputElement>(null);
   const scrollLock = useRef<{ x: number; y: number } | null>(null);
 
@@ -34,19 +46,31 @@ export default function App() {
   }, [data]);
 
   useEffect(() => {
+    document.title = extensionName;
     let active = true;
     void (async () => {
       const stored = await getStoredData();
       if (!active) return;
       setData(stored);
+      const [token, meta] = await Promise.all([getDriveToken(false), readDriveMeta()]);
+      if (!active) return;
+      setSignedIn(Boolean(token));
+      setDriveMeta(meta);
+      setDriveReady(true);
+      if (token) void browser.runtime.sendMessage({ type: 'mkr-drive-sync' });
       if (stored.catalog.length === 0) await refresh(active);
       else setLoading(false);
     })();
 
-    const listener = () => {
-      void getStoredData().then((stored) => {
-        if (active) setData(stored);
-      });
+    const listener = (changes: Record<string, { newValue?: unknown }>, area: string) => {
+      if (area === 'local' && changes[DRIVE_META_KEY]) {
+        setDriveMeta(driveMetaFrom(changes[DRIVE_META_KEY]?.newValue));
+      }
+      if (area === 'sync' || (area === 'local' && changes.musicKitRater)) {
+        void getStoredData().then((stored) => {
+          if (active) setData(stored);
+        });
+      }
     };
     browser.storage.onChanged.addListener(listener);
     return () => {
@@ -89,6 +113,30 @@ export default function App() {
     } finally {
       event.target.value = '';
     }
+  }
+
+  async function signIn() {
+    setDriveBusy(true);
+    setSyncError(null);
+    try {
+      const token = await getDriveToken(true);
+      if (!token) {
+        setSyncError('Google did not return an access token.');
+        return;
+      }
+      setSignedIn(true);
+      await browser.runtime.sendMessage({ type: 'mkr-drive-sync' });
+    } catch (error) {
+      setSignedIn(false);
+      setSyncError(error instanceof Error ? error.message : 'Google sign-in failed.');
+    } finally {
+      setDriveBusy(false);
+    }
+  }
+
+  async function signOut() {
+    setSignedIn(false);
+    await browser.runtime.sendMessage({ type: 'mkr-drive-sign-out' });
   }
 
   function exportRatings() {
@@ -147,7 +195,7 @@ export default function App() {
       <header className="app-header">
         <div>
           <p className="eyebrow">CS2 MUSIC KITS</p>
-          <h1>CS Music Kit Explorer</h1>
+          <h1>{extensionName}</h1>
           <p className="subtitle">
             Listen on csgoskins.gg, then keep your personal ranking here.
           </p>
@@ -162,6 +210,18 @@ export default function App() {
           <button className="button" type="button" onClick={() => importInput.current?.click()}>
             Import
           </button>
+          {signedIn ? (
+            <>
+              <span className="drive-status">{driveMeta.syncing ? 'Saving to Drive…' : 'Saved to Drive'}</span>
+              <button className="button" type="button" onClick={() => void signOut()}>
+                Sign out
+              </button>
+            </>
+          ) : (
+            <button className="button button--primary" type="button" disabled={driveBusy} onClick={() => void signIn()}>
+              {driveBusy ? 'Waiting for Google…' : 'Sign in with Google'}
+            </button>
+          )}
           <input
             ref={importInput}
             className="visually-hidden"
@@ -211,7 +271,13 @@ export default function App() {
         </label>
       </section>
 
+      {driveReady && !signedIn && (
+        <div className="notice notice--drive">
+          Sign in once with Google. Ratings are saved to a file in your Drive and stay there if you reinstall.
+        </div>
+      )}
       {syncError && <div className="notice notice--error">{syncError}</div>}
+      {driveMeta.lastError && <div className="notice notice--error">{driveMeta.lastError}</div>}
       {loading && data.catalog.length === 0 && (
         <div className="empty-state">Loading the music kit catalog…</div>
       )}
@@ -253,6 +319,11 @@ export default function App() {
           {data.lastSyncedAt
             ? `Prices synced ${new Date(data.lastSyncedAt).toLocaleString()}`
             : 'Prices have not been synced'}
+        </span>
+        <span>
+          {signedIn && driveMeta.lastSavedAt
+            ? `Drive backup ${new Date(driveMeta.lastSavedAt).toLocaleString()}`
+            : 'Drive backup is off'}
         </span>
       </footer>
     </div>

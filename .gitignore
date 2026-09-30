@@ -14,6 +14,9 @@ stats-*.json
 .wxt
 web-ext.config.ts
 
+# Unpacked-extension signing key. The public key is in the manifest.
+keys/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

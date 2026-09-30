@@ -18,7 +18,7 @@ export default function App() {
   return (
     <main className="launcher">
       <p className="launcher__eyebrow">CS2 MUSIC KITS</p>
-      <h1>CS Music Kit Explorer</h1>
+      <h1>{browser.runtime.getManifest().name}</h1>
       <p>Open your full comparison board.</p>
       <button type="button" onClick={openApp}>
         Open explorer

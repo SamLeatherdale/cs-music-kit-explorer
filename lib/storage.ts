@@ -2,6 +2,7 @@ import { mergeTracks, normalizeTracks, strongerListen } from './listening';
 import type { KitStatus, MusicKit, Rating, StoredData, UserKitState } from './types';
 
 const STORAGE_KEY = 'musicKitRater';
+const DELETED_KEY = 'mkrDeleted';
 const KIT_STATE_PREFIX = 'mkr:';
 
 const emptyData: StoredData = {
@@ -49,6 +50,7 @@ export async function updateKitState(
 ): Promise<StoredData> {
   await migrateStates();
   const previous = normalizeKitState(await readKitState(slug));
+  const updatedAt = new Date().toISOString();
   const nextState: UserKitState = {
     ...previous,
     ...update,
@@ -57,10 +59,16 @@ export async function updateKitState(
       update.listened !== undefined
         ? strongerListen(previous.listened, update.listened)
         : previous.listened,
+    updatedAt,
   };
 
-  if (isEmptyState(nextState)) await browser.storage.sync.remove(kitStateKey(slug));
-  else await browser.storage.sync.set({ [kitStateKey(slug)]: nextState });
+  if (isEmptyState(nextState)) {
+    await browser.storage.sync.remove(kitStateKey(slug));
+    await markDeleted(slug, updatedAt);
+  } else {
+    await unmarkDeleted(slug);
+    await browser.storage.sync.set({ [kitStateKey(slug)]: nextState });
+  }
 
   return getStoredData();
 }
@@ -112,6 +120,15 @@ export async function importData(raw: string): Promise<StoredData> {
   const stale = Object.keys(existing).filter((key) => slugFromStateKey(key) && !(key in payload));
   if (stale.length > 0) await browser.storage.sync.remove(stale);
   if (Object.keys(payload).length > 0) await browser.storage.sync.set(payload);
+
+  const deleted = await readDeleted();
+  const deletedAt = new Date().toISOString();
+  for (const key of stale) {
+    const slug = slugFromStateKey(key);
+    if (slug) deleted[slug] = deletedAt;
+  }
+  for (const slug of Object.keys(states)) delete deleted[slug];
+  await browser.storage.local.set({ [DELETED_KEY]: deleted });
 
   const lastSyncedAt = typeof parsed.lastSyncedAt === 'string' ? parsed.lastSyncedAt : null;
   await browser.storage.local.set({
@@ -184,13 +201,52 @@ async function readKitState(slug: string): Promise<LegacyKitState | undefined> {
   return value && typeof value === 'object' ? (value as LegacyKitState) : undefined;
 }
 
+export function toStoredKitState(state: unknown): UserKitState | null {
+  if (!state || typeof state !== 'object') return null;
+  const normalized = normalizeKitState(state as LegacyKitState);
+  return isEmptyState(normalized) ? null : normalized;
+}
+
+export async function readUserStates(): Promise<Record<string, UserKitState>> {
+  await migrateStates();
+  return readSyncStates();
+}
+
+export async function readDeleted(): Promise<Record<string, string>> {
+  const result = await browser.storage.local.get(DELETED_KEY);
+  return deletedMap(result[DELETED_KEY]);
+}
+
+export async function replaceUserStates(
+  states: Record<string, UserKitState>,
+  deleted: Record<string, string>,
+): Promise<void> {
+  await migrateStates();
+  const payload: Record<string, UserKitState> = {};
+  for (const [slug, state] of Object.entries(states)) {
+    const normalized = toStoredKitState(state);
+    if (normalized) payload[kitStateKey(slug)] = normalized;
+  }
+
+  const existing = await browser.storage.sync.get(null);
+  const stale = Object.keys(existing).filter((key) => {
+    const slug = slugFromStateKey(key);
+    return slug != null && !payload[kitStateKey(slug)];
+  });
+  if (stale.length > 0) await browser.storage.sync.remove(stale);
+  if (Object.keys(payload).length > 0) await browser.storage.sync.set(payload);
+  await browser.storage.local.set({ [DELETED_KEY]: deleted });
+}
+
 function normalizeKitState(state: LegacyKitState | undefined): UserKitState {
-  return {
+  const normalized: UserKitState = {
     stars: state?.stars == null ? null : clampRating(state.stars),
     status: normalizeStatus(state),
     listened: state?.listened === 'partial' || state?.listened === 'full' ? state.listened : null,
     tracks: normalizeTracks(state?.tracks),
   };
+  if (typeof state?.updatedAt === 'string') normalized.updatedAt = state.updatedAt;
+  return normalized;
 }
 
 function normalizeStatus(state: LegacyKitState | undefined): KitStatus | null {
@@ -198,6 +254,28 @@ function normalizeStatus(state: LegacyKitState | undefined): KitStatus | null {
     return state.status;
   }
   return state?.owned === true ? 'owned' : null;
+}
+
+async function markDeleted(slug: string, deletedAt: string): Promise<void> {
+  const deleted = await readDeleted();
+  deleted[slug] = deletedAt;
+  await browser.storage.local.set({ [DELETED_KEY]: deleted });
+}
+
+async function unmarkDeleted(slug: string): Promise<void> {
+  const deleted = await readDeleted();
+  if (!deleted[slug]) return;
+  delete deleted[slug];
+  await browser.storage.local.set({ [DELETED_KEY]: deleted });
+}
+
+function deletedMap(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object') return {};
+  const deleted: Record<string, string> = {};
+  for (const [slug, time] of Object.entries(value)) {
+    if (typeof time === 'string' && time) deleted[slug] = time;
+  }
+  return deleted;
 }
 
 function isEmptyState(state: UserKitState): boolean {

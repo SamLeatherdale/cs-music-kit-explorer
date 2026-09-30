@@ -40,6 +40,7 @@ interface RatingBarProps {
   value: Rating | null;
   status: KitStatus | null;
   listened?: ListenProgress | null;
+  layout?: 'bar' | 'board';
   onRatingChange: (value: Rating | null) => void;
   onStatusChange: (status: KitStatus | null) => void;
   onLayout?: (height: number) => void;
@@ -49,6 +50,7 @@ export function RatingBar({
   value,
   status,
   listened = null,
+  layout = 'bar',
   onRatingChange,
   onStatusChange,
   onLayout,
@@ -58,7 +60,7 @@ export function RatingBar({
 
   return (
     <div
-      className="mkr-bar"
+      className={layout === 'board' ? 'mkr-bar mkr-bar--board' : 'mkr-bar'}
       style={{ '--mkr-color': shown ? ratingColor(shown) : '#475569' } as CSSProperties}
       ref={(node) => {
         if (node) onLayout?.(node.offsetHeight);
